@@ -6,7 +6,6 @@ import {
   requireUser,
 } from '@/server/api';
 import { billing } from '@/server/billingClient';
-import { hasBillingCredentials, legacyFunction } from '@/server/legacyFunction';
 
 export const Route = createFileRoute('/api/billing-status')({
   server: {
@@ -14,9 +13,6 @@ export const Route = createFileRoute('/api/billing-status')({
       OPTIONS: preflight,
       GET: async ({ request }) => {
         try {
-          if (!hasBillingCredentials()) {
-            return legacyFunction('billing-status', request);
-          }
           const user = await requireUser(request);
           return json(await billing.getStatus(user.email!));
         } catch (err) {
