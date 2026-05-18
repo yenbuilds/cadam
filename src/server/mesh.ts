@@ -458,6 +458,7 @@ export async function handleMeshRequest(req: Request) {
       );
     }
 
+    ensureFalConfig();
     const appBaseUrl = webhookBaseUrl(req.url);
     const meshReferenceId = crypto.randomUUID();
     try {

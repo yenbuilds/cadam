@@ -8,6 +8,7 @@ import {
   Prompt,
   MeshData,
   CoreMessage,
+  MeshFileType,
 } from '@shared/types';
 import { getAnonSupabaseClient, type SupabaseClient } from './supabaseClient';
 import Tree from '@shared/Tree';
@@ -18,7 +19,8 @@ import {
   getSignedUrls,
   formatCreativeUserMessage,
 } from './messageUtils';
-import { env, requiredEnv, webhookBaseUrl } from './env';
+import { env, requiredEnv } from './env';
+import { handleMeshRequest } from './mesh';
 
 const CHAT_TOKEN_COST = 1;
 const getAnthropicApiKey = () => requiredEnv('ANTHROPIC_API_KEY');
@@ -737,62 +739,40 @@ export async function handleCreativeChatRequest(req: Request) {
                     ...(polygonCount && { polygonCount }),
                   };
 
-                  let appBaseUrl: string;
-                  try {
-                    appBaseUrl = webhookBaseUrl(req.url);
-                  } catch (error) {
-                    await refundChatToken();
-                    logError(error, {
-                      functionName: 'creative-chat',
-                      statusCode: 500,
-                      userId: userData.user?.id,
-                      conversationId,
-                      additionalContext: {
-                        step: 'resolve_mesh_webhook_base_url',
-                      },
-                    });
-                    content = {
-                      ...content,
-                      toolCalls: content.toolCalls?.map((toolCall) =>
-                        toolCall.id === currentToolUse?.id
-                          ? { ...toolCall, status: 'error' }
-                          : toolCall,
-                      ),
-                    };
-                    streamMessage(controller, {
-                      ...newMessageData,
-                      content,
-                    });
-                    continue;
-                  }
-
-                  debugLog('=== CREATIVE-CHAT: CALLING MESH ENDPOINT ===');
-                  debugLog('Creative-chat: Calling mesh endpoint', {
-                    url: `${appBaseUrl}/cadam/api/mesh`,
+                  const meshRequestUrl = new URL('/cadam/api/mesh', req.url);
+                  debugLog('=== CREATIVE-CHAT: CALLING MESH HANDLER ===');
+                  debugLog('Creative-chat: Calling mesh handler', {
+                    url: meshRequestUrl.toString(),
                     body: meshRequestBody,
                     modelInBody: meshRequestBody.model,
                   });
 
-                  const result = await fetch(`${appBaseUrl}/cadam/api/mesh`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: req.headers.get('Authorization') ?? '',
-                    },
-                    body: JSON.stringify(meshRequestBody),
-                    signal: abortSignal,
-                  });
+                  const result = await handleMeshRequest(
+                    new Request(meshRequestUrl, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: req.headers.get('Authorization') ?? '',
+                      },
+                      body: JSON.stringify(meshRequestBody),
+                      signal: abortSignal,
+                    }),
+                  );
 
-                  const data = await result.json();
+                  const data: {
+                    id?: string;
+                    fileType?: MeshFileType;
+                    error?: unknown;
+                  } = await result.json();
 
-                  debugLog('Creative-chat: Mesh endpoint response', {
+                  debugLog('Creative-chat: Mesh handler response', {
                     status: result.status,
                     ok: result.ok,
-                    data: data,
+                    data,
                   });
 
                   if (!result.ok) {
-                    console.error('Creative-chat: Mesh endpoint failed', {
+                    console.error('Creative-chat: Mesh handler failed', {
                       status: result.status,
                       error: data.error,
                       model,
@@ -814,6 +794,9 @@ export async function handleCreativeChatRequest(req: Request) {
                       };
                     }
                   } else {
+                    if (!data.id || !data.fileType) {
+                      throw new Error('mesh handler response missing mesh');
+                    }
                     const mesh = { id: data.id, fileType: data.fileType };
                     content = {
                       ...content,
