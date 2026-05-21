@@ -3,6 +3,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { chatTools, type AppUIMessage, type AppTools } from '@shared/chatAi';
 import { getParametricText } from '@shared/parametricParts';
+import { normalizeConversationSuggestions } from '@shared/suggestions';
 import type { Conversation, Message, MeshFileType, Model } from '@shared/types';
 import {
   convertToModelMessages,
@@ -558,8 +559,8 @@ async function generateConversationSuggestions({
       model: anthropic('claude-haiku-4-5'),
       system:
         conversationType === 'creative'
-          ? 'Given a 3D mesh design conversation, return an array of exactly 3 follow-up prompts the user might want to send next. Each prompt is a single concise instruction (under 8 words), not a question. Return exactly 3 items — no more, no fewer.'
-          : 'Given a parametric CAD conversation, return an array of exactly 3 follow-up prompts the user might want to send next. Each prompt is a single concise instruction (under 8 words), not a question. Return exactly 3 items — no more, no fewer.',
+          ? 'Given a 3D mesh design conversation, return an array of exactly 3 follow-up prompts the user might want to send next. Each prompt is a concise instruction of 3 words or fewer, not a question. Return exactly 3 items — no more, no fewer.'
+          : 'Given a parametric CAD conversation, return an array of exactly 3 follow-up prompts the user might want to send next. Each prompt is a concise instruction of 3 words or fewer, not a question. Return exactly 3 items — no more, no fewer.',
       prompt: summary,
       output: Output.object({
         schema: z.object({
@@ -567,7 +568,7 @@ async function generateConversationSuggestions({
         }),
       }),
     });
-    return result.output.suggestions.slice(0, 3);
+    return normalizeConversationSuggestions(result.output.suggestions);
   } catch (error) {
     logError(error, {
       functionName: 'ai-chat',
